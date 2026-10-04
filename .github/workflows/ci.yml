@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check src tests
+      - run: uv run ruff format --check src tests
+      - run: uv run mypy
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --python ${{ matrix.python }}
+      # Coverage is gated at 100%, branches included.
+      - run: uv run --python ${{ matrix.python }} pytest --cov=pybac
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      # A source distribution should carry the project and nothing else. This
+      # once shipped a whole unrelated directory because the default is to
+      # include whatever happens to be in the working tree.
+      - name: the sdist carries only what it should
+        run: |
+          python - <<'PY'
+          import pathlib, sys, tarfile
+          archive = next(pathlib.Path("dist").glob("*.tar.gz"))
+          roots = {
+              name.split("/")[1]
+              for name in tarfile.open(archive).getnames()
+              if "/" in name
+          }
+          allowed = {
+              "src", "tests", "docs", "README.md", "LICENSE",
+              "CHANGELOG.md", "SECURITY.md", "pyproject.toml",
+              "PKG-INFO", ".gitignore",
+          }
+          if unexpected := sorted(roots - allowed):
+              sys.exit(f"unexpected in the sdist: {unexpected}")
+          print(f"sdist is clean: {sorted(roots)}")
+          PY
