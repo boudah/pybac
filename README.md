@@ -1,5 +1,11 @@
 # pybac
 
+[![PyPI](https://img.shields.io/pypi/v/pybac.svg)](https://pypi.org/project/pybac/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pybac.svg)](https://pypi.org/project/pybac/)
+[![CI](https://github.com/boudah/pybac/actions/workflows/ci.yml/badge.svg)](https://github.com/boudah/pybac/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen.svg)](https://github.com/boudah/pybac/actions/workflows/ci.yml)
+[![Licence](https://img.shields.io/pypi/l/pybac.svg)](LICENSE)
+
 Access control starts as `if user.is_admin`. Eighteen months later it is a
 600-line module that four people understood, three of whom have left, and
 nobody edits it on a Friday.
@@ -70,7 +76,9 @@ evaluator.explain(policy, session, user)           # ...and why?
 
 ## Status
 
-Working, and not yet packaged for release. Present so far:
+First release. Everything below works, is covered by tests, and is documented —
+but this is `0.1.0`, and the shape of the API is still settling. **Pin an exact
+version** if a rename would hurt you.
 
 | | |
 |---|---|

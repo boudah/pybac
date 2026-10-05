@@ -1,0 +1,108 @@
+name: Release
+
+# Publishing is triggered by a tag, and the tag has to agree with the version
+# in the package -- see the check below. A release can also be re-run by hand
+# against TestPyPI, which is the only safe place to rehearse one.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to publish
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # A release that cannot pass its own tests is not a release.
+      - run: uv sync
+      - run: uv run ruff check src tests
+      - run: uv run mypy
+      - run: uv run pytest --cov=pybac
+
+      - run: uv build
+
+      - name: read the version that was built
+        id: version
+        run: |
+          version=$(uv run python -c "import pybac; print(pybac.__version__)")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "built $version"
+
+      # A tag that disagrees with the package publishes the wrong thing, and a
+      # version on PyPI can never be replaced.
+      - name: the tag agrees with the version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          built="${{ steps.version.outputs.version }}"
+          if [ "$tag" != "$built" ]; then
+            echo "tag $GITHUB_REF_NAME does not match version $built" >&2
+            exit 1
+          fi
+
+      - name: the sdist carries only what it should
+        run: |
+          python - <<'PY'
+          import pathlib, sys, tarfile
+          archive = next(pathlib.Path("dist").glob("*.tar.gz"))
+          roots = {
+              name.split("/")[1]
+              for name in tarfile.open(archive).getnames()
+              if "/" in name
+          }
+          allowed = {
+              "src", "tests", "docs", "README.md", "LICENSE",
+              "CHANGELOG.md", "SECURITY.md", "pyproject.toml",
+              "PKG-INFO", ".gitignore",
+          }
+          if unexpected := sorted(roots - allowed):
+              sys.exit(f"unexpected in the sdist: {unexpected}")
+          print(f"sdist is clean: {sorted(roots)}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+
+  testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write # the only credential: a short-lived OIDC token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/') || inputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: distributions
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
